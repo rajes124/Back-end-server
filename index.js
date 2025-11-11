@@ -11,13 +11,8 @@ app.use(express.json());
 
 // MongoDB Connection
 const uri = "mongodb+srv://Back-End-server:g2EEkN5vBsSFjgM8@website0.ahtmawh.mongodb.net/?appName=website0";
-
 const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
+  serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
 });
 
 async function run() {
@@ -25,67 +20,72 @@ async function run() {
     await client.connect();
     const db = client.db("Back-End-server");
     const productsCollection = db.collection("products");
-    const userCollection = db.collection("users");
 
-    // Users Route
-    app.post("/users", async (req, res) => {
-      const newUser = req.body;
-      const existingUser = await userCollection.findOne({ email: newUser.email });
-
-      if (existingUser) {
-        return res.send({ message: "User already exists, no need to insert again." });
-      }
-
-      const result = await userCollection.insertOne(newUser);
-      res.send(result);
-    });
-
-    // Products Routes
+    // Get all products
     app.get("/products", async (req, res) => {
       const result = await productsCollection.find().toArray();
       res.send(result);
     });
 
+    // Get single product by _id
     app.get("/products/:id", async (req, res) => {
       const id = req.params.id;
-      const result = await productsCollection.findOne({ _id: new ObjectId(id) });
-      res.send(result);
-    });
 
-    app.post("/products", async (req, res) => {
-      const newProduct = req.body;
-      const result = await productsCollection.insertOne(newProduct);
-      res.send(result);
-    });
-
-    app.patch("/products/:id", async (req, res) => {
-      const id = req.params.id;
-      const updatedProduct = req.body;
-      const result = await productsCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { name: updatedProduct.name, price: updatedProduct.price } }
-      );
-      res.send(result);
-    });
-
-    app.delete("/products/:id", async (req, res) => {
-      const id = req.params.id;
-      const result = await productsCollection.deleteOne({ _id: new ObjectId(id) });
-      res.send(result);
-    });
-
-    // ✅ Latest 6 Products route (Home page)
-    app.get("/latest-products", async (req, res) => {
+      let query;
       try {
-        const result = await productsCollection
-          .find()
-          .sort({ createdAt: -1 }) // নতুন প্রোডাক্ট প্রথম
-          .limit(6)
-          .toArray();
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ message: "Error fetching latest products", error });
+        query = { _id: new ObjectId(id) };
+      } catch {
+        query = { _id: id };
       }
+
+      const result = await productsCollection.findOne(query);
+      if (!result) {
+        return res.status(404).send({ message: "Product not found" });
+      }
+      res.send(result);
+    });
+
+    // Latest 6 products (for Home page)
+    app.get("/latest-products", async (req, res) => {
+      const result = await productsCollection.find().sort({ createdAt: -1 }).limit(6).toArray();
+      res.send(result);
+    });
+
+    // ------------------------
+    // Import product route
+    // ------------------------
+    app.put("/products/import/:id", async (req, res) => {
+      const id = req.params.id;
+      const { quantity } = req.body;
+
+      if (!quantity || quantity <= 0) {
+        return res.status(400).send({ message: "Invalid quantity" });
+      }
+
+      let query;
+      try {
+        query = { _id: new ObjectId(id) };
+      } catch {
+        query = { _id: id };
+      }
+
+      const product = await productsCollection.findOne(query);
+      if (!product) {
+        return res.status(404).send({ message: "Product not found" });
+      }
+
+      if (quantity > product.availableQuantity) {
+        return res.status(400).send({ message: "Import quantity exceeds available stock" });
+      }
+
+      // Decrease availableQuantity using $inc
+      const updatedProduct = await productsCollection.findOneAndUpdate(
+        query,
+        { $inc: { availableQuantity: -quantity } },
+        { returnDocument: "after" }
+      );
+
+      res.send(updatedProduct.value);
     });
 
     await client.db("admin").command({ ping: 1 });
