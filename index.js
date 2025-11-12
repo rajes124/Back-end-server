@@ -10,8 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB connection
-const uri =
-  "mongodb+srv://Back-End-server:g2EEkN5vBsSFjgM8@website0.ahtmawh.mongodb.net/?appName=website0";
+const uri = "mongodb+srv://Back-End-server:g2EEkN5vBsSFjgM8@website0.ahtmawh.mongodb.net/?appName=website0";
 const client = new MongoClient(uri, {
   serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
 });
@@ -37,106 +36,52 @@ async function run() {
     app.get("/products/:id", async (req, res) => {
       const id = req.params.id;
       let query;
-      try {
-        query = { _id: new ObjectId(id) };
-      } catch {
-        query = { _id: id };
-      }
-
+      try { query = { _id: new ObjectId(id) }; } catch { query = { _id: id }; }
       const product = await productsCollection.findOne(query);
       if (!product) return res.status(404).json({ message: "Product not found" });
       res.json(product);
     });
 
     // -----------------------------
-    // Import product (fixed)
+    // Import product
     // -----------------------------
     app.put("/products/import/:id", async (req, res) => {
       try {
         const { quantity, userId } = req.body;
+        if (!quantity || quantity <= 0) return res.status(400).json({ message: "Invalid quantity" });
+        if (!userId) return res.status(400).json({ message: "User ID required" });
 
-        if (!quantity || quantity <= 0)
-          return res.status(400).json({ message: "Invalid quantity" });
-        if (!userId)
-          return res.status(400).json({ message: "User ID required" });
-
-        let query;
-        try {
-          query = { _id: new ObjectId(req.params.id) };
-        } catch {
-          query = { _id: req.params.id };
-        }
-
+        const query = { _id: new ObjectId(req.params.id) };
         const product = await productsCollection.findOne(query);
-        if (!product)
-          return res.status(404).json({ message: "Product not found" });
+        if (!product) return res.status(404).json({ message: "Product not found" });
 
-        // ✅ Main fix: import হবে যতটা available আছে
         const finalQuantity = Math.min(quantity, product.availableQuantity);
-        if (finalQuantity <= 0)
-          return res.status(400).json({ message: "Product out of stock" });
+        if (finalQuantity <= 0) return res.status(400).json({ message: "Product out of stock" });
 
-        // 1️⃣ availableQuantity কমানো
         const updatedProduct = await productsCollection.findOneAndUpdate(
           query,
           { $inc: { availableQuantity: -finalQuantity } },
           { returnDocument: "after" }
         );
 
-        // 2️⃣ user's imports update করা
         await usersCollection.updateOne(
           { uid: userId },
-          {
-            $push: {
-              imports: {
-                productId: req.params.id,
-                importedQuantity: finalQuantity,
-                date: new Date(),
-              },
-            },
-          },
+          { $push: { imports: { productId: req.params.id, importedQuantity: finalQuantity, date: new Date() } } },
           { upsert: true }
         );
 
-        res.json({
-          message: "Product imported successfully",
-          importedQuantity: finalQuantity,
-          availableQuantity: updatedProduct.value.availableQuantity,
-        });
-      } catch (error) {
-        console.error("❌ Import error:", error);
-        res.status(500).json({ message: "Failed to import product" });
-      }
+        res.json({ importedQuantity: finalQuantity, availableQuantity: updatedProduct.value.availableQuantity });
+      } catch (err) { console.error(err); res.status(500).json({ message: "Failed to import" }); }
     });
 
     // -----------------------------
-    // ✅ Add Export/Product
+    // Add product
     // -----------------------------
     app.post("/products", async (req, res) => {
       try {
-        const {
-          productName,
-          image,
-          price,
-          originCountry,
-          rating,
-          availableQuantity,
-          userEmail,
-        } = req.body;
-
-        if (
-          !productName ||
-          !image ||
-          !price ||
-          !originCountry ||
-          !rating ||
-          !availableQuantity ||
-          !userEmail
-        ) {
-          return res
-            .status(400)
-            .json({ message: "সব ফিল্ড পূরণ করতে হবে (userEmail সহ)" });
-        }
+        const { productName, image, price, originCountry, rating, availableQuantity, userEmail } = req.body;
+        if (!productName || !image || !price || !originCountry || !rating || !availableQuantity || !userEmail)
+          return res.status(400).json({ message: "সব ফিল্ড পূরণ করতে হবে (userEmail সহ)" });
 
         const newProduct = {
           productName,
@@ -148,7 +93,6 @@ async function run() {
           userEmail,
           createdAt: new Date(),
         };
-
         const result = await productsCollection.insertOne(newProduct);
         res.status(201).json({ insertedId: result.insertedId, ...newProduct });
       } catch (error) {
@@ -167,9 +111,8 @@ async function run() {
 
       const importsDetailed = await Promise.all(
         user.imports.map(async (imp) => {
-          const product = await productsCollection.findOne({
-            _id: new ObjectId(imp.productId),
-          });
+          if (!imp?.productId) return null;
+          const product = await productsCollection.findOne({ _id: new ObjectId(imp.productId) });
           if (!product) return null;
           return { ...product, importedQuantity: imp.importedQuantity };
         })
@@ -179,18 +122,13 @@ async function run() {
     });
 
     // -----------------------------
-    // ✅ Get My Exports
+    // Get My Exports
     // -----------------------------
     app.get("/my-exports/:email", async (req, res) => {
       try {
         const email = req.params.email;
-        if (!email)
-          return res.status(400).json({ message: "User email required" });
-
-        const result = await productsCollection
-          .find({ userEmail: email })
-          .toArray();
-
+        if (!email) return res.status(400).json({ message: "User email required" });
+        const result = await productsCollection.find({ userEmail: email }).toArray();
         res.json(result);
       } catch (error) {
         console.error("❌ MyExports fetch error:", error);
@@ -204,17 +142,9 @@ async function run() {
     app.delete("/my-exports/:id", async (req, res) => {
       try {
         const id = req.params.id;
-        let query;
-        try {
-          query = { _id: new ObjectId(id) };
-        } catch {
-          query = { _id: id };
-        }
-
+        const query = { _id: new ObjectId(id) };
         const result = await productsCollection.deleteOne(query);
-        if (result.deletedCount === 0)
-          return res.status(404).json({ message: "Product not found" });
-
+        if (result.deletedCount === 0) return res.status(404).json({ message: "Product not found" });
         res.json({ message: "Product deleted successfully" });
       } catch (error) {
         console.error("❌ Delete error:", error);
@@ -228,31 +158,13 @@ async function run() {
     app.put("/my-exports/:id", async (req, res) => {
       try {
         const id = req.params.id;
-        const { productName, image, price, originCountry, rating, availableQuantity } =
-          req.body;
-
-        let query;
-        try {
-          query = { _id: new ObjectId(id) };
-        } catch {
-          query = { _id: id };
-        }
-
+        const { productName, image, price, originCountry, rating, availableQuantity } = req.body;
+        const query = { _id: new ObjectId(id) };
         const updateDoc = {
-          $set: {
-            productName,
-            image,
-            price: Number(price),
-            originCountry,
-            rating: Number(rating),
-            availableQuantity: Number(availableQuantity),
-          },
+          $set: { productName, image, price: Number(price), originCountry, rating: Number(rating), availableQuantity: Number(availableQuantity) },
         };
-
         const result = await productsCollection.updateOne(query, updateDoc);
-        if (result.matchedCount === 0)
-          return res.status(404).json({ message: "Product not found" });
-
+        if (result.matchedCount === 0) return res.status(404).json({ message: "Product not found" });
         const updated = await productsCollection.findOne(query);
         res.json(updated);
       } catch (error) {
@@ -262,14 +174,11 @@ async function run() {
     });
 
     // -----------------------------
-    // Remove an import
+    // Remove import
     // -----------------------------
     app.delete("/my-imports/:userId/:productId", async (req, res) => {
       const { userId, productId } = req.params;
-      await usersCollection.updateOne(
-        { uid: userId },
-        { $pull: { imports: { productId } } }
-      );
+      await usersCollection.updateOne({ uid: userId }, { $pull: { imports: { productId } } });
       res.json({ message: "Import removed successfully" });
     });
 
