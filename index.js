@@ -10,7 +10,8 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB connection
-const uri = "mongodb+srv://Back-End-server:g2EEkN5vBsSFjgM8@website0.ahtmawh.mongodb.net/?appName=website0";
+const uri =
+  "mongodb+srv://Back-End-server:g2EEkN5vBsSFjgM8@website0.ahtmawh.mongodb.net/?appName=website0";
 const client = new MongoClient(uri, {
   serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
 });
@@ -36,27 +37,39 @@ async function run() {
     app.get("/products/:id", async (req, res) => {
       const id = req.params.id;
       let query;
-      try { query = { _id: new ObjectId(id) }; } catch { query = { _id: id }; }
+      try {
+        query = { _id: new ObjectId(id) };
+      } catch {
+        query = { _id: id };
+      }
       const product = await productsCollection.findOne(query);
       if (!product) return res.status(404).json({ message: "Product not found" });
       res.json(product);
     });
 
     // -----------------------------
-    // Import product
+    // ✅ Fixed: Import product route
     // -----------------------------
     app.put("/products/import/:id", async (req, res) => {
       try {
         const { quantity, userId } = req.body;
-        if (!quantity || quantity <= 0) return res.status(400).json({ message: "Invalid quantity" });
+        if (!quantity || quantity <= 0)
+          return res.status(400).json({ message: "Invalid quantity" });
         if (!userId) return res.status(400).json({ message: "User ID required" });
 
-        const query = { _id: new ObjectId(req.params.id) };
+        let query;
+        try {
+          query = { _id: new ObjectId(req.params.id) };
+        } catch {
+          query = { _id: req.params.id };
+        }
+
         const product = await productsCollection.findOne(query);
         if (!product) return res.status(404).json({ message: "Product not found" });
 
         const finalQuantity = Math.min(quantity, product.availableQuantity);
-        if (finalQuantity <= 0) return res.status(400).json({ message: "Product out of stock" });
+        if (finalQuantity <= 0)
+          return res.status(400).json({ message: "Product out of stock" });
 
         const updatedProduct = await productsCollection.findOneAndUpdate(
           query,
@@ -66,22 +79,55 @@ async function run() {
 
         await usersCollection.updateOne(
           { uid: userId },
-          { $push: { imports: { productId: req.params.id, importedQuantity: finalQuantity, date: new Date() } } },
+          {
+            $setOnInsert: { uid: userId },
+            $push: {
+              imports: {
+                productId: req.params.id, // keep as string to avoid mismatch
+                importedQuantity: finalQuantity,
+                date: new Date(),
+              },
+            },
+          },
           { upsert: true }
         );
 
-        res.json({ importedQuantity: finalQuantity, availableQuantity: updatedProduct.value.availableQuantity });
-      } catch (err) { console.error(err); res.status(500).json({ message: "Failed to import" }); }
+        res.json({
+          importedQuantity: finalQuantity,
+          availableQuantity: updatedProduct.value.availableQuantity,
+        });
+      } catch (err) {
+        console.error("❌ Import error:", err);
+        res.status(500).json({ message: "Failed to import" });
+      }
     });
 
     // -----------------------------
-    // Add product
+    // Add product (export)
     // -----------------------------
     app.post("/products", async (req, res) => {
       try {
-        const { productName, image, price, originCountry, rating, availableQuantity, userEmail } = req.body;
-        if (!productName || !image || !price || !originCountry || !rating || !availableQuantity || !userEmail)
-          return res.status(400).json({ message: "সব ফিল্ড পূরণ করতে হবে (userEmail সহ)" });
+        const {
+          productName,
+          image,
+          price,
+          originCountry,
+          rating,
+          availableQuantity,
+          userEmail,
+        } = req.body;
+        if (
+          !productName ||
+          !image ||
+          !price ||
+          !originCountry ||
+          !rating ||
+          !availableQuantity ||
+          !userEmail
+        )
+          return res
+            .status(400)
+            .json({ message: "সব ফিল্ড পূরণ করতে হবে (userEmail সহ)" });
 
         const newProduct = {
           productName,
@@ -102,23 +148,57 @@ async function run() {
     });
 
     // -----------------------------
-    // Get user's imports
+    // ✅ Fixed: Get user's imports
     // -----------------------------
     app.get("/my-imports/:userId", async (req, res) => {
-      const { userId } = req.params;
-      const user = await usersCollection.findOne({ uid: userId });
-      if (!user || !user.imports) return res.json([]);
+      try {
+        const { userId } = req.params;
+        const user = await usersCollection.findOne({ uid: userId });
+        if (!user || !user.imports) return res.json([]);
 
-      const importsDetailed = await Promise.all(
-        user.imports.map(async (imp) => {
-          if (!imp?.productId) return null;
-          const product = await productsCollection.findOne({ _id: new ObjectId(imp.productId) });
-          if (!product) return null;
-          return { ...product, importedQuantity: imp.importedQuantity };
-        })
-      );
+        const importsDetailed = await Promise.all(
+          user.imports.map(async (imp) => {
+            if (!imp?.productId) return null;
 
-      res.json(importsDetailed.filter(Boolean));
+            let query;
+            try {
+              query = { _id: new ObjectId(imp.productId) };
+            } catch {
+              query = { _id: imp.productId };
+            }
+
+            const product = await productsCollection.findOne(query);
+            if (!product) return null;
+
+            return {
+              ...product,
+              importedQuantity: imp.importedQuantity,
+            };
+          })
+        );
+
+        res.json(importsDetailed.filter(Boolean));
+      } catch (err) {
+        console.error("❌ Error fetching imports:", err);
+        res.status(500).json({ message: "Failed to fetch imports" });
+      }
+    });
+
+    // -----------------------------
+    // Remove import
+    // -----------------------------
+    app.delete("/my-imports/:userId/:productId", async (req, res) => {
+      try {
+        const { userId, productId } = req.params;
+        await usersCollection.updateOne(
+          { uid: userId },
+          { $pull: { imports: { productId } } }
+        );
+        res.json({ message: "Import removed successfully" });
+      } catch (err) {
+        console.error("❌ Error removing import:", err);
+        res.status(500).json({ message: "Failed to remove import" });
+      }
     });
 
     // -----------------------------
@@ -128,7 +208,9 @@ async function run() {
       try {
         const email = req.params.email;
         if (!email) return res.status(400).json({ message: "User email required" });
-        const result = await productsCollection.find({ userEmail: email }).toArray();
+        const result = await productsCollection
+          .find({ userEmail: email })
+          .toArray();
         res.json(result);
       } catch (error) {
         console.error("❌ MyExports fetch error:", error);
@@ -144,7 +226,8 @@ async function run() {
         const id = req.params.id;
         const query = { _id: new ObjectId(id) };
         const result = await productsCollection.deleteOne(query);
-        if (result.deletedCount === 0) return res.status(404).json({ message: "Product not found" });
+        if (result.deletedCount === 0)
+          return res.status(404).json({ message: "Product not found" });
         res.json({ message: "Product deleted successfully" });
       } catch (error) {
         console.error("❌ Delete error:", error);
@@ -158,28 +241,34 @@ async function run() {
     app.put("/my-exports/:id", async (req, res) => {
       try {
         const id = req.params.id;
-        const { productName, image, price, originCountry, rating, availableQuantity } = req.body;
+        const {
+          productName,
+          image,
+          price,
+          originCountry,
+          rating,
+          availableQuantity,
+        } = req.body;
         const query = { _id: new ObjectId(id) };
         const updateDoc = {
-          $set: { productName, image, price: Number(price), originCountry, rating: Number(rating), availableQuantity: Number(availableQuantity) },
+          $set: {
+            productName,
+            image,
+            price: Number(price),
+            originCountry,
+            rating: Number(rating),
+            availableQuantity: Number(availableQuantity),
+          },
         };
         const result = await productsCollection.updateOne(query, updateDoc);
-        if (result.matchedCount === 0) return res.status(404).json({ message: "Product not found" });
+        if (result.matchedCount === 0)
+          return res.status(404).json({ message: "Product not found" });
         const updated = await productsCollection.findOne(query);
         res.json(updated);
       } catch (error) {
         console.error("❌ Update error:", error);
         res.status(500).json({ message: "Failed to update product" });
       }
-    });
-
-    // -----------------------------
-    // Remove import
-    // -----------------------------
-    app.delete("/my-imports/:userId/:productId", async (req, res) => {
-      const { userId, productId } = req.params;
-      await usersCollection.updateOne({ uid: userId }, { $pull: { imports: { productId } } });
-      res.json({ message: "Import removed successfully" });
     });
 
     await client.db("admin").command({ ping: 1 });
@@ -192,11 +281,10 @@ async function run() {
 run().catch(console.dir);
 
 // Root route
-app.get("/", (req, res) => {
-  res.send("✅ Server is running successfully!");
-});
+app.get("/", (req, res) => res.send("✅ Server is running successfully!"));
 
 // Start server
-app.listen(port, () => {
-  console.log(`🚀 Server running on http://localhost:${port}`);
-});
+app.listen(port, () =>
+  console.log(`🚀 Server running on http://localhost:${port}`)
+);
+ 
