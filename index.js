@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+require("dotenv").config(); // ✅ নতুন লাইন (env connect)
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
@@ -10,8 +11,7 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB connection
-const uri =
-  "mongodb+srv://Back-End-server:g2EEkN5vBsSFjgM8@website0.ahtmawh.mongodb.net/?appName=website0";
+const uri = process.env.MONGO_URI; // ✅ নতুন লাইন (env থেকে Mongo URI)
 const client = new MongoClient(uri, {
   serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
 });
@@ -32,13 +32,11 @@ async function run() {
         if (!uid || !email)
           return res.status(400).json({ message: "UID এবং Email প্রয়োজন" });
 
-        
         const userExists = await usersCollection.findOne({ uid });
         if (userExists) {
           return res.json({ message: "User already exists", user: userExists });
         }
 
-        
         const newUser = { uid, name, email, photoURL, createdAt: new Date() };
         const result = await usersCollection.insertOne(newUser);
         res.status(201).json({ message: "User created", user: newUser });
@@ -73,7 +71,7 @@ async function run() {
     });
 
     // -----------------------------
-    // Fixed: Import product route
+    // Import product route
     // -----------------------------
     app.put("/products/import/:id", async (req, res) => {
       try {
@@ -108,7 +106,7 @@ async function run() {
             $setOnInsert: { uid: userId },
             $push: {
               imports: {
-                productId: req.params.id, 
+                productId: req.params.id,
                 importedQuantity: finalQuantity,
                 date: new Date(),
               },
@@ -173,7 +171,7 @@ async function run() {
     });
 
     // -----------------------------
-    // ✅ Fixed: Get user's imports
+    // Get user's imports
     // -----------------------------
     app.get("/my-imports/:userId", async (req, res) => {
       try {
@@ -312,5 +310,3 @@ app.get("/", (req, res) => res.send("✅ Server is running successfully!"));
 app.listen(port, () =>
   console.log(`🚀 Server running on http://localhost:${port}`)
 );
-   
-
