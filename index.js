@@ -24,7 +24,7 @@ async function run() {
     const usersCollection = db.collection("users");
 
     // -----------------------------
-    // ✅ Add User safely (to prevent duplicates)
+    //  Add User safely (to prevent duplicates)
     // -----------------------------
     app.post("/users", async (req, res) => {
       try {
@@ -32,13 +32,13 @@ async function run() {
         if (!uid || !email)
           return res.status(400).json({ message: "UID এবং Email প্রয়োজন" });
 
-        // চেক করুন ইউজার আছে কি না
+        
         const userExists = await usersCollection.findOne({ uid });
         if (userExists) {
           return res.json({ message: "User already exists", user: userExists });
         }
 
-        // ইউজার না থাকলে নতুন ইউজার তৈরি করুন
+        
         const newUser = { uid, name, email, photoURL, createdAt: new Date() };
         const result = await usersCollection.insertOne(newUser);
         res.status(201).json({ message: "User created", user: newUser });
@@ -73,7 +73,7 @@ async function run() {
     });
 
     // -----------------------------
-    // ✅ Fixed: Import product route
+    // Fixed: Import product route
     // -----------------------------
     app.put("/products/import/:id", async (req, res) => {
       try {
@@ -108,7 +108,7 @@ async function run() {
             $setOnInsert: { uid: userId },
             $push: {
               imports: {
-                productId: req.params.id, // keep as string to avoid mismatch
+                productId: req.params.id, 
                 importedQuantity: finalQuantity,
                 date: new Date(),
               },
