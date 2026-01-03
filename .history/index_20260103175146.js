@@ -6,9 +6,11 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 4000;
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
+// MongoDB connection
 const uri = process.env.MONGO_URI;
 const client = new MongoClient(uri, {
   serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
@@ -20,7 +22,7 @@ async function run() {
     const productsCollection = db.collection("products");
     const usersCollection = db.collection("users");
 
-    // ==================== ADD USER WITH AUTO ROLE FIELD ====================
+    // ==================== ADD USER WITH ROLE (ADMIN AUTO FOR YOUR GMAIL) ====================
     app.post("/users", async (req, res) => {
       try {
         const { uid, name, email, photoURL } = req.body;
@@ -29,6 +31,10 @@ async function run() {
 
         const userExists = await usersCollection.findOne({ uid });
         if (userExists) {
+          // যদি তোমার Gmail হয়, role update করে admin বানিয়ে দাও
+          if (email === "rajesray307@gmail.com") {
+            await usersCollection.updateOne({ uid }, { $set: { role: "admin" } });
+          }
           return res.json({ message: "User already exists", user: userExists });
         }
 
@@ -37,9 +43,14 @@ async function run() {
           name, 
           email, 
           photoURL, 
-          role: "user",           // <--- এই লাইনটা যোগ করো – সব নতুন user-এর জন্য auto role "user"
+          role: "user",  // সবার জন্য default user
           createdAt: new Date() 
         };
+
+        // তোমার Gmail দিয়ে প্রথমবার register/login করলে admin বানাও
+        if (email === "rajesray307@gmail.com") {
+          newUser.role = "admin";
+        }
 
         const result = await usersCollection.insertOne(newUser);
         res.status(201).json({ message: "User created", user: newUser });

@@ -1,26 +1,31 @@
-const express = require("express");
+ const express = require("express");
 const cors = require("cors");
-require("dotenv").config();
+require("dotenv").config(); // ✅ নতুন লাইন (env connect)
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
 const port = process.env.PORT || 4000;
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-const uri = process.env.MONGO_URI;
+// MongoDB connection
+const uri = process.env.MONGO_URI; // ✅ নতুন লাইন (env থেকে Mongo URI)
 const client = new MongoClient(uri, {
   serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
 });
 
 async function run() {
   try {
+   // await client.connect();
     const db = client.db("Back-End-server");
     const productsCollection = db.collection("products");
     const usersCollection = db.collection("users");
 
-    // ==================== ADD USER WITH AUTO ROLE FIELD ====================
+    // -----------------------------
+    //  Add User safely (to prevent duplicates)
+    // -----------------------------
     app.post("/users", async (req, res) => {
       try {
         const { uid, name, email, photoURL } = req.body;
@@ -32,15 +37,7 @@ async function run() {
           return res.json({ message: "User already exists", user: userExists });
         }
 
-        const newUser = { 
-          uid, 
-          name, 
-          email, 
-          photoURL, 
-          role: "user",           // <--- এই লাইনটা যোগ করো – সব নতুন user-এর জন্য auto role "user"
-          createdAt: new Date() 
-        };
-
+        const newUser = { uid, name, email, photoURL, createdAt: new Date() };
         const result = await usersCollection.insertOne(newUser);
         res.status(201).json({ message: "User created", user: newUser });
       } catch (error) {
@@ -49,12 +46,17 @@ async function run() {
       }
     });
 
-    // বাকি সব route তোমার আগের মতোই – কোনো change নেই
+    // -----------------------------
+    // Get all products
+    // -----------------------------
     app.get("/products", async (req, res) => {
       const result = await productsCollection.find().toArray();
       res.json(result);
     });
 
+    // -----------------------------
+    // Get single product by ID
+    // -----------------------------
     app.get("/products/:id", async (req, res) => {
       const id = req.params.id;
       let query;
@@ -68,6 +70,9 @@ async function run() {
       res.json(product);
     });
 
+    // -----------------------------
+    // Import product route
+    // -----------------------------
     app.put("/products/import/:id", async (req, res) => {
       try {
         const { quantity, userId } = req.body;
@@ -120,6 +125,9 @@ async function run() {
       }
     });
 
+    // -----------------------------
+    // Add product (export)
+    // -----------------------------
     app.post("/products", async (req, res) => {
       try {
         const {
@@ -162,6 +170,9 @@ async function run() {
       }
     });
 
+    // -----------------------------
+    // Get user's imports
+    // -----------------------------
     app.get("/my-imports/:userId", async (req, res) => {
       try {
         const { userId } = req.params;
@@ -196,6 +207,9 @@ async function run() {
       }
     });
 
+    // -----------------------------
+    // Remove import
+    // -----------------------------
     app.delete("/my-imports/:userId/:productId", async (req, res) => {
       try {
         const { userId, productId } = req.params;
@@ -210,6 +224,9 @@ async function run() {
       }
     });
 
+    // -----------------------------
+    // Get My Exports
+    // -----------------------------
     app.get("/my-exports/:email", async (req, res) => {
       try {
         const email = req.params.email;
@@ -224,6 +241,9 @@ async function run() {
       }
     });
 
+    // -----------------------------
+    // Delete Export Product
+    // -----------------------------
     app.delete("/my-exports/:id", async (req, res) => {
       try {
         const id = req.params.id;
@@ -238,6 +258,9 @@ async function run() {
       }
     });
 
+    // -----------------------------
+    // Update Export Product
+    // -----------------------------
     app.put("/my-exports/:id", async (req, res) => {
       try {
         const id = req.params.id;
@@ -280,8 +303,10 @@ async function run() {
 
 run().catch(console.dir);
 
+// Root route
 app.get("/", (req, res) => res.send("✅ Server is running successfully!"));
 
+// Start server
 app.listen(port, () =>
   console.log(`🚀 Server running on http://localhost:${port}`)
 );
